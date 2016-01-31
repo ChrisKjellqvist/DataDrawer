@@ -1,54 +1,55 @@
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.util.ArrayList;
+import java.util.Scanner;
 
 /**
  * Created by chris on 9/21/15.
  * Uses data created by gatherData to construct an overlay for a map image.
- *
- * NOT COMPLETED YET.
  */
 public class MapMaker {
+    static final int dataSize = 50;
+    static int[][] data;
+    static HSBColor red = new HSBColor(0, 255, 255);
+
     public static void main(String[] args) throws IOException {
-        makeMap();
+        Scanner sc = new Scanner(new File("settings.txt"));
+        String coords1 = sc.nextLine();
+        String coords2 = sc.nextLine();
+        String[] xyDivs = sc.nextLine().split(" ");
+        int x = Integer.parseInt(xyDivs[0]);
+        int y = Integer.parseInt(xyDivs[1]);
+        data = new int[dataSize][dataSize];
+        makeMap(x, y);
     }
 
-    public static void makeMap() throws IOException {
-        HSBColor red = new HSBColor(0, 255, 255);
-        final int dataSize = 50;
-        //INPUT DATA
-        BufferedReader read = new BufferedReader(new FileReader("output.txt"));
-        String[] coordsSplit = read.readLine().split(" ");
-        try {
-            double[] nw = {Double.parseDouble(coordsSplit[0]), Double.parseDouble(coordsSplit[1])};
-            double[] se = {Double.parseDouble(coordsSplit[2]), Double.parseDouble(coordsSplit[3])};
-        } catch (Exception e) {
-            System.out.println(coordsSplit[0] + " " + coordsSplit[1] + " " + coordsSplit[2] + " " + coordsSplit[3]);
-            throw e;
+    public static void makeMap(int divsX, int divsY) throws IOException {
+        BufferedReader read;
+        for (int i = 0; i < divsX; i++) {
+            for (int j = 0; j < divsY; j++) {
+                try {
+                    read = new BufferedReader(new FileReader("input_" + i * divsY + j + "txt"));
+                    read.readLine();
+                    String a;
+                    int startingPointX = i * dataSize;
+                    int startingPointY = j * dataSize;
+                    while ((a = read.readLine()) != null) {
+                        String[] str = a.split(" ");
+                        int[] coords = {Integer.parseInt(str[0]), Integer.parseInt(str[1])};
+                        int value = Integer.parseInt(str[2]);
+                        data[startingPointX + coords[0]][startingPointY + coords[1]] = value;
+                    }
+                } catch (FileNotFoundException ex) {
+                }
+            }
         }
-        int[][] data = new int[dataSize][dataSize];
-        String str = "";
-        while ((str = read.readLine()) != null) {
-            String[] spl = str.split(" ");
-            int x = Integer.parseInt(spl[1]);
-            int y = Integer.parseInt(spl[0]);
-            int address = Integer.parseInt(spl[2]);
-            data[x][y] = address;
-        }
-
-
         //PUT DATA IN A LIST
         ArrayList<Integer> vals = new ArrayList<>();
         for (int[] a : data) {
             for (int b : a) {
-                if (b < 8000) {
-                    vals.add(b);
-                }
+                vals.add(b);
             }
         }
         //FIND MAX
@@ -59,32 +60,29 @@ public class MapMaker {
             }
         }
         //FINDING PERCENTAGES
-        double[][] overlayVals = new double[400][400];
-        for (int i = 0; i < dataSize; i++) {
-            for (int j = 0; j < dataSize; j++) {
-                double percentage = 0.0;
-                if (data[j][i] != 0) {
-                    percentage = (double) data[j][i] / max;
+        double[][] overlayVals = new double[data.length][data[0].length];
+        for (int i = 0; i < data.length; i++) {
+            for (int j = 0; j < data[0].length; j++) {
+                double percentage;
+                try {
+                    percentage = data[i][j] / max;
+                } catch (ArithmeticException ex) {
+                    percentage = 0;
                 }
-                for (int k = 0; k < 400 / dataSize; k++) {
-                    for (int l = 0; l < 400 / dataSize; l++) {
-                        overlayVals[j * (400 / dataSize) + k][i * (400 / dataSize) + l] = percentage;
-                    }
-                }
+                overlayVals[i][j] = percentage;
             }
         }
-        //GET MAP
-        BufferedImage map = ImageIO.read(new File("maps3.png"));
-        BufferedImage finalMap = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
+        BufferedImage map = ImageIO.read(new File("template.png"));
+        BufferedImage finalMap = new BufferedImage(data.length, data[0].length, BufferedImage.TYPE_INT_RGB);
 
-        for (int i = 0; i < 400; i++) {
-            for (int j = 0; j < 400; j++) {
-                int finalRGB;
-                int mapInt = map.getRGB(j, i);
-                Color mapC = new Color(mapInt);
-                finalRGB = combine(new HSBColor(mapC.getRed(), mapC.getGreen(), mapC.getBlue()),
-                        red, (1 - overlayVals[j][i])).RGBV;
-                finalMap.setRGB(j, i, finalRGB);
+        for (int i = 0; i < data.length; i++) {
+            for (int j = 0; j < data[0].length; j++) {
+                int mapInt = map.getRGB(i, j);
+                Color mapRGB = new Color(mapInt);
+                HSBColor mapHSB = new HSBColor(mapRGB.getRed(), mapRGB.getGreen(), mapRGB.getBlue());
+                HSBColor finalHSB = combine(mapHSB, red, overlayVals[i][j]);
+                finalMap.setRGB(i, j, finalHSB.RGBV);
+
             }
         }
         ImageIO.write(finalMap, "png", new File("map.png"));
@@ -93,7 +91,7 @@ public class MapMaker {
     public static HSBColor combine(HSBColor a, HSBColor b, double ratio) {
         double[] finalVals = new double[3];
         for (int i = 0; i < 3; i++) {
-            finalVals[i] = a.HSV[i] * ratio + b.HSV[i] * (1 - ratio);
+            finalVals[i] = a.HSV[i] * ratio + b.HSV[i] * ratio;
         }
         return new HSBColor(finalVals[0], finalVals[1], a.HSV[2]);
     }
